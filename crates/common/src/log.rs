@@ -143,6 +143,32 @@ pub fn init_logger_pretty() {
         .ok();
 }
 
+/// 将日志级别转换为字符串
+/// 
+/// # 参数
+/// - `level`: 日志级别
+/// 
+/// # 返回
+/// 返回日志级别的字符串表示
+/// 
+/// # 示例
+/// ```no_run
+/// use common::log::level_to_string;
+/// use tracing::Level;
+/// 
+/// let level_str = level_to_string(Level::DEBUG);
+/// assert_eq!(level_str, "debug");
+/// ```
+pub fn level_to_string(level: Level) -> &'static str {
+    match level {
+        Level::TRACE => "trace",
+        Level::DEBUG => "debug",
+        Level::INFO => "info",
+        Level::WARN => "warn",
+        Level::ERROR => "error",
+    }
+}
+
 /// 获取默认日志过滤器
 /// 
 /// 该函数返回一个基于环境变量RUST_LOG的EnvFilter，如果未设置则使用info级别
@@ -188,6 +214,15 @@ mod tests {
             Level::ERROR => "error",
         };
         assert_eq!(level_str, "debug");
+    }
+
+    #[test]
+    fn test_level_to_string() {
+        assert_eq!(level_to_string(Level::TRACE), "trace");
+        assert_eq!(level_to_string(Level::DEBUG), "debug");
+        assert_eq!(level_to_string(Level::INFO), "info");
+        assert_eq!(level_to_string(Level::WARN), "warn");
+        assert_eq!(level_to_string(Level::ERROR), "error");
     }
 
     #[test]
