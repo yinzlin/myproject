@@ -96,6 +96,24 @@ pub fn init_logger_json() {
         .ok();
 }
 
+/// 获取默认日志过滤器
+/// 
+/// 该函数返回一个基于环境变量RUST_LOG的EnvFilter，如果未设置则使用info级别
+/// 
+/// # 返回
+/// 返回一个EnvFilter实例
+/// 
+/// # 示例
+/// ```no_run
+/// use common::log::get_default_filter;
+/// 
+/// let filter = get_default_filter();
+/// ```
+pub fn get_default_filter() -> EnvFilter {
+    EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,5 +161,11 @@ mod tests {
     fn test_init_logger_json() {
         init_logger_json();
         tracing::info!("JSON格式日志测试");
+    }
+
+    #[test]
+    fn test_get_default_filter() {
+        let filter = get_default_filter();
+        assert!(filter.to_string().contains("info") || filter.to_string().contains("debug"));
     }
 }
