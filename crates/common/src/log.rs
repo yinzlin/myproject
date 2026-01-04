@@ -96,6 +96,29 @@ pub fn init_logger_json() {
         .ok();
 }
 
+/// 使用紧凑格式初始化日志系统
+/// 
+/// 该函数会配置tracing日志系统，使用紧凑格式输出日志，适合生产环境
+/// 支持从环境变量RUST_LOG读取日志级别，默认日志级别为info
+/// 
+/// # 示例
+/// ```no_run
+/// use common::log::init_logger_compact;
+/// 
+/// init_logger_compact();
+/// tracing::info!("紧凑格式日志");
+/// ```
+pub fn init_logger_compact() {
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info"));
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(fmt::layer().compact())
+        .try_init()
+        .ok();
+}
+
 /// 获取默认日志过滤器
 /// 
 /// 该函数返回一个基于环境变量RUST_LOG的EnvFilter，如果未设置则使用info级别
@@ -161,6 +184,12 @@ mod tests {
     fn test_init_logger_json() {
         init_logger_json();
         tracing::info!("JSON格式日志测试");
+    }
+
+    #[test]
+    fn test_init_logger_compact() {
+        init_logger_compact();
+        tracing::info!("紧凑格式日志测试");
     }
 
     #[test]
