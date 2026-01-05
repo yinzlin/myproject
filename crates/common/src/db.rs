@@ -85,6 +85,10 @@ pub async fn close_pool(pool: DbPool) -> DbResult<()> {
     Ok(())
 }
 
+pub fn get_pool_size(pool: &DbPool) -> u32 {
+    pool.size()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,6 +199,21 @@ mod tests {
                 let close_result = close_pool(pool).await;
                 assert!(close_result.is_ok());
                 println!("连接池关闭成功");
+            }
+            Err(e) => {
+                println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_pool_size() {
+        let result = create_pool_with_url("postgresql://postgres:password@localhost:5432/testdb").await;
+        match result {
+            Ok(pool) => {
+                let size = get_pool_size(&pool);
+                assert_eq!(size, 0);
+                println!("连接池当前连接数: {}", size);
             }
             Err(e) => {
                 println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
