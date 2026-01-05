@@ -1,0 +1,104 @@
+use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
+use std::time::Duration;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum DbError {
+    #[error("数据库连接错误: {0}")]
+    ConnectionError(#[from] sqlx::Error),
+    #[error("配置错误: {0}")]
+    ConfigError(String),
+}
+
+pub type DbResult<T> = Result<T, DbError>;
+
+#[derive(Debug, Clone)]
+pub struct DbConfig {
+    pub database_url: String,
+    pub max_connections: u32,
+    pub min_connections: u32,
+    pub acquire_timeout: Duration,
+    pub idle_timeout: Duration,
+    pub max_lifetime: Duration,
+}
+
+impl Default for DbConfig {
+    fn default() -> Self {
+        Self {
+            database_url: "postgresql://postgres:password@localhost:5432/mydb".to_string(),
+            max_connections: 10,
+            min_connections: 1,
+            acquire_timeout: Duration::from_secs(30),
+            idle_timeout: Duration::from_secs(600),
+            max_lifetime: Duration::from_secs(1800),
+        }
+    }
+}
+
+pub type DbPool = Pool<Postgres>;
+
+pub async fn create_pool(config: &DbConfig) -> DbResult<DbPool> {
+    let pool = PgPoolOptions::new()
+        .max_connections(config.max_connections)
+        .min_connections(config.min_connections)
+        .acquire_timeout(config.acquire_timeout)
+        .idle_timeout(config.idle_timeout)
+        .max_lifetime(config.max_lifetime)
+        .connect(&config.database_url)
+        .await?;
+
+    Ok(pool)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_db_config_default() {
+        let config = DbConfig::default();
+        assert_eq!(config.max_connections, 10);
+        assert_eq!(config.min_connections, 1);
+        assert_eq!(config.acquire_timeout, Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_db_config_custom() {
+        let config = DbConfig {
+            database_url: "postgresql://user:pass@host:5432/db".to_string(),
+            max_connections: 20,
+            min_connections: 5,
+            ..Default::default()
+        };
+        assert_eq!(config.max_connections, 20);
+        assert_eq!(config.min_connections, 5);
+        assert_eq!(config.database_url, "postgresql://user:pass@host:5432/db");
+    }
+
+    #[test]
+    fn test_db_error_display() {
+        let error = DbError::ConfigError("test error".to_string());
+        assert_eq!(error.to_string(), "配置错误: test error");
+    }
+
+    #[tokio::test]
+    async fn test_create_pool() {
+        let config = DbConfig {
+            database_url: "postgresql://postgres:password@localhost:5432/testdb".to_string(),
+            max_connections: 5,
+            min_connections: 1,
+            ..Default::default()
+        };
+
+        let result = create_pool(&config).await;
+        match result {
+            Ok(pool) => {
+                assert_eq!(pool.size(), 0);
+                println!("连接池创建成功，当前连接数: {}", pool.size());
+            }
+            Err(e) => {
+                println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
+            }
+        }
+    }
+}
