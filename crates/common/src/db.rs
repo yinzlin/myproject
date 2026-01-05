@@ -80,6 +80,11 @@ pub async fn test_connection(pool: &DbPool) -> DbResult<bool> {
         .map_err(DbError::ConnectionError)
 }
 
+pub async fn close_pool(pool: DbPool) -> DbResult<()> {
+    pool.close().await;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,6 +180,21 @@ mod tests {
                         println!("数据库连接测试失败: {}", e);
                     }
                 }
+            }
+            Err(e) => {
+                println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_close_pool() {
+        let result = create_pool_with_url("postgresql://postgres:password@localhost:5432/testdb").await;
+        match result {
+            Ok(pool) => {
+                let close_result = close_pool(pool).await;
+                assert!(close_result.is_ok());
+                println!("连接池关闭成功");
             }
             Err(e) => {
                 println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
