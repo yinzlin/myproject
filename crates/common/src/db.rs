@@ -271,16 +271,19 @@ pub async fn execute_query_with_timeout(
         .map_err(|_| DbError::QueryTimeout)?
 }
 
-pub async fn fetch_one(pool: &DbPool, query: &str) -> DbResult<sqlx::postgres::PgRow> {
+pub async fn fetch_one(pool: &DbPool, query: &str) -> DbResult<sqlx::any::AnyRow> {
     match pool {
         DbPool::Postgres(pool) => {
             let row = sqlx::query(query)
                 .fetch_one(pool)
                 .await?;
-            Ok(row)
+            sqlx::any::AnyRow::try_from(&row).map_err(DbError::ConnectionError)
         }
-        DbPool::Sqlite(_) => {
-            Err(DbError::UnsupportedDatabaseType)
+        DbPool::Sqlite(pool) => {
+            let row = sqlx::query(query)
+                .fetch_one(pool)
+                .await?;
+            sqlx::any::AnyRow::try_from(&row).map_err(DbError::ConnectionError)
         }
     }
 }
@@ -289,22 +292,31 @@ pub async fn fetch_one_with_timeout(
     pool: &DbPool,
     query: &str,
     timeout: Duration,
-) -> DbResult<sqlx::postgres::PgRow> {
+) -> DbResult<sqlx::any::AnyRow> {
     tokio::time::timeout(timeout, fetch_one(pool, query))
         .await
         .map_err(|_| DbError::QueryTimeout)?
 }
 
-pub async fn fetch_all(pool: &DbPool, query: &str) -> DbResult<Vec<sqlx::postgres::PgRow>> {
+pub async fn fetch_all(pool: &DbPool, query: &str) -> DbResult<Vec<sqlx::any::AnyRow>> {
     match pool {
         DbPool::Postgres(pool) => {
             let rows = sqlx::query(query)
                 .fetch_all(pool)
                 .await?;
-            Ok(rows)
+            rows.into_iter()
+                .map(|row| sqlx::any::AnyRow::try_from(&row))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(DbError::ConnectionError)
         }
-        DbPool::Sqlite(_) => {
-            Err(DbError::UnsupportedDatabaseType)
+        DbPool::Sqlite(pool) => {
+            let rows = sqlx::query(query)
+                .fetch_all(pool)
+                .await?;
+            rows.into_iter()
+                .map(|row| sqlx::any::AnyRow::try_from(&row))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(DbError::ConnectionError)
         }
     }
 }
@@ -313,22 +325,37 @@ pub async fn fetch_all_with_timeout(
     pool: &DbPool,
     query: &str,
     timeout: Duration,
-) -> DbResult<Vec<sqlx::postgres::PgRow>> {
+) -> DbResult<Vec<sqlx::any::AnyRow>> {
     tokio::time::timeout(timeout, fetch_all(pool, query))
         .await
         .map_err(|_| DbError::QueryTimeout)?
 }
 
-pub async fn fetch_optional(pool: &DbPool, query: &str) -> DbResult<Option<sqlx::postgres::PgRow>> {
+pub async fn fetch_optional(pool: &DbPool, query: &str) -> DbResult<Option<sqlx::any::AnyRow>> {
     match pool {
         DbPool::Postgres(pool) => {
             let row = sqlx::query(query)
                 .fetch_optional(pool)
                 .await?;
-            Ok(row)
+            match row {
+                Some(r) => {
+                    let any_row = sqlx::any::AnyRow::try_from(&r).map_err(DbError::ConnectionError)?;
+                    Ok(Some(any_row))
+                }
+                None => Ok(None),
+            }
         }
-        DbPool::Sqlite(_) => {
-            Err(DbError::UnsupportedDatabaseType)
+        DbPool::Sqlite(pool) => {
+            let row = sqlx::query(query)
+                .fetch_optional(pool)
+                .await?;
+            match row {
+                Some(r) => {
+                    let any_row = sqlx::any::AnyRow::try_from(&r).map_err(DbError::ConnectionError)?;
+                    Ok(Some(any_row))
+                }
+                None => Ok(None),
+            }
         }
     }
 }
@@ -337,7 +364,7 @@ pub async fn fetch_optional_with_timeout(
     pool: &DbPool,
     query: &str,
     timeout: Duration,
-) -> DbResult<Option<sqlx::postgres::PgRow>> {
+) -> DbResult<Option<sqlx::any::AnyRow>> {
     tokio::time::timeout(timeout, fetch_optional(pool, query))
         .await
         .map_err(|_| DbError::QueryTimeout)?
@@ -427,16 +454,19 @@ pub async fn execute_in_transaction_with_timeout(
 pub async fn fetch_one_in_transaction(
     tx: &mut DbTransaction<'_>,
     query: &str,
-) -> DbResult<sqlx::postgres::PgRow> {
+) -> DbResult<sqlx::any::AnyRow> {
     match tx {
         DbTransaction::Postgres(tx) => {
             let row = sqlx::query(query)
                 .fetch_one(&mut **tx)
                 .await?;
-            Ok(row)
+            sqlx::any::AnyRow::try_from(&row).map_err(DbError::ConnectionError)
         }
-        DbTransaction::Sqlite(_) => {
-            Err(DbError::UnsupportedDatabaseType)
+        DbTransaction::Sqlite(tx) => {
+            let row = sqlx::query(query)
+                .fetch_one(&mut **tx)
+                .await?;
+            sqlx::any::AnyRow::try_from(&row).map_err(DbError::ConnectionError)
         }
     }
 }
@@ -445,7 +475,7 @@ pub async fn fetch_one_in_transaction_with_timeout(
     tx: &mut DbTransaction<'_>,
     query: &str,
     timeout: Duration,
-) -> DbResult<sqlx::postgres::PgRow> {
+) -> DbResult<sqlx::any::AnyRow> {
     tokio::time::timeout(timeout, fetch_one_in_transaction(tx, query))
         .await
         .map_err(|_| DbError::QueryTimeout)?
@@ -454,16 +484,25 @@ pub async fn fetch_one_in_transaction_with_timeout(
 pub async fn fetch_all_in_transaction(
     tx: &mut DbTransaction<'_>,
     query: &str,
-) -> DbResult<Vec<sqlx::postgres::PgRow>> {
+) -> DbResult<Vec<sqlx::any::AnyRow>> {
     match tx {
         DbTransaction::Postgres(tx) => {
             let rows = sqlx::query(query)
                 .fetch_all(&mut **tx)
                 .await?;
-            Ok(rows)
+            rows.into_iter()
+                .map(|row| sqlx::any::AnyRow::try_from(&row))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(DbError::ConnectionError)
         }
-        DbTransaction::Sqlite(_) => {
-            Err(DbError::UnsupportedDatabaseType)
+        DbTransaction::Sqlite(tx) => {
+            let rows = sqlx::query(query)
+                .fetch_all(&mut **tx)
+                .await?;
+            rows.into_iter()
+                .map(|row| sqlx::any::AnyRow::try_from(&row))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(DbError::ConnectionError)
         }
     }
 }
@@ -472,7 +511,7 @@ pub async fn fetch_all_in_transaction_with_timeout(
     tx: &mut DbTransaction<'_>,
     query: &str,
     timeout: Duration,
-) -> DbResult<Vec<sqlx::postgres::PgRow>> {
+) -> DbResult<Vec<sqlx::any::AnyRow>> {
     tokio::time::timeout(timeout, fetch_all_in_transaction(tx, query))
         .await
         .map_err(|_| DbError::QueryTimeout)?
@@ -481,16 +520,31 @@ pub async fn fetch_all_in_transaction_with_timeout(
 pub async fn fetch_optional_in_transaction(
     tx: &mut DbTransaction<'_>,
     query: &str,
-) -> DbResult<Option<sqlx::postgres::PgRow>> {
+) -> DbResult<Option<sqlx::any::AnyRow>> {
     match tx {
         DbTransaction::Postgres(tx) => {
             let row = sqlx::query(query)
                 .fetch_optional(&mut **tx)
                 .await?;
-            Ok(row)
+            match row {
+                Some(r) => {
+                    let any_row = sqlx::any::AnyRow::try_from(&r).map_err(DbError::ConnectionError)?;
+                    Ok(Some(any_row))
+                }
+                None => Ok(None),
+            }
         }
-        DbTransaction::Sqlite(_) => {
-            Err(DbError::UnsupportedDatabaseType)
+        DbTransaction::Sqlite(tx) => {
+            let row = sqlx::query(query)
+                .fetch_optional(&mut **tx)
+                .await?;
+            match row {
+                Some(r) => {
+                    let any_row = sqlx::any::AnyRow::try_from(&r).map_err(DbError::ConnectionError)?;
+                    Ok(Some(any_row))
+                }
+                None => Ok(None),
+            }
         }
     }
 }
@@ -499,7 +553,7 @@ pub async fn fetch_optional_in_transaction_with_timeout(
     tx: &mut DbTransaction<'_>,
     query: &str,
     timeout: Duration,
-) -> DbResult<Option<sqlx::postgres::PgRow>> {
+) -> DbResult<Option<sqlx::any::AnyRow>> {
     tokio::time::timeout(timeout, fetch_optional_in_transaction(tx, query))
         .await
         .map_err(|_| DbError::QueryTimeout)?
