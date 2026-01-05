@@ -136,6 +136,16 @@ pub async fn rollback_transaction(tx: sqlx::Transaction<'_, Postgres>) -> DbResu
     Ok(())
 }
 
+pub async fn execute_in_transaction(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    query: &str,
+) -> DbResult<u64> {
+    let result = sqlx::query(query)
+        .execute(&mut **tx)
+        .await?;
+    Ok(result.rows_affected())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -444,6 +454,36 @@ mod tests {
                             }
                             Err(e) => {
                                 println!("事务回滚失败: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("事务创建失败: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_execute_in_transaction() {
+        let result = create_pool_with_url("postgresql://postgres:password@localhost:5432/testdb").await;
+        match result {
+            Ok(pool) => {
+                let tx_result = begin_transaction(&pool).await;
+                match tx_result {
+                    Ok(mut tx) => {
+                        let exec_result = execute_in_transaction(&mut tx, "SELECT 1").await;
+                        match exec_result {
+                            Ok(rows) => {
+                                assert_eq!(rows, 1);
+                                println!("事务内查询执行成功，影响行数: {}", rows);
+                            }
+                            Err(e) => {
+                                println!("事务内查询执行失败: {}", e);
                             }
                         }
                     }
