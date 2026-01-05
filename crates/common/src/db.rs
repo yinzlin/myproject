@@ -114,6 +114,13 @@ pub async fn fetch_all(pool: &DbPool, query: &str) -> DbResult<Vec<sqlx::postgre
     Ok(rows)
 }
 
+pub async fn fetch_optional(pool: &DbPool, query: &str) -> DbResult<Option<sqlx::postgres::PgRow>> {
+    let row = sqlx::query(query)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row)
+}
+
 pub async fn begin_transaction(pool: &DbPool) -> DbResult<sqlx::Transaction<'_, Postgres>> {
     let tx = pool.begin().await?;
     Ok(tx)
@@ -337,6 +344,32 @@ mod tests {
                     }
                     Err(e) => {
                         println!("多行查询失败: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_optional() {
+        let result = create_pool_with_url("postgresql://postgres:password@localhost:5432/testdb").await;
+        match result {
+            Ok(pool) => {
+                let fetch_result = fetch_optional(&pool, "SELECT 1 as value").await;
+                match fetch_result {
+                    Ok(Some(row)) => {
+                        let value: i32 = row.get("value");
+                        assert_eq!(value, 1);
+                        println!("可选查询成功，value: {}", value);
+                    }
+                    Ok(None) => {
+                        println!("可选查询返回空结果");
+                    }
+                    Err(e) => {
+                        println!("可选查询失败: {}", e);
                     }
                 }
             }
