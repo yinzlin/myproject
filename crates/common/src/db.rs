@@ -119,6 +119,11 @@ pub async fn begin_transaction(pool: &DbPool) -> DbResult<sqlx::Transaction<'_, 
     Ok(tx)
 }
 
+pub async fn commit_transaction(tx: sqlx::Transaction<'_, Postgres>) -> DbResult<()> {
+    tx.commit().await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -345,6 +350,35 @@ mod tests {
                 match tx_result {
                     Ok(_tx) => {
                         println!("事务创建成功");
+                    }
+                    Err(e) => {
+                        println!("事务创建失败: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_commit_transaction() {
+        let result = create_pool_with_url("postgresql://postgres:password@localhost:5432/testdb").await;
+        match result {
+            Ok(pool) => {
+                let tx_result = begin_transaction(&pool).await;
+                match tx_result {
+                    Ok(tx) => {
+                        let commit_result = commit_transaction(tx).await;
+                        match commit_result {
+                            Ok(_) => {
+                                println!("事务提交成功");
+                            }
+                            Err(e) => {
+                                println!("事务提交失败: {}", e);
+                            }
+                        }
                     }
                     Err(e) => {
                         println!("事务创建失败: {}", e);
