@@ -93,6 +93,13 @@ pub fn get_idle_connections(pool: &DbPool) -> u32 {
     pool.num_idle() as u32
 }
 
+pub async fn execute_query(pool: &DbPool, query: &str) -> DbResult<u64> {
+    let result = sqlx::query(query)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,6 +240,28 @@ mod tests {
                 let idle = get_idle_connections(&pool);
                 assert_eq!(idle, 0);
                 println!("连接池空闲连接数: {}", idle);
+            }
+            Err(e) => {
+                println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_execute_query() {
+        let result = create_pool_with_url("postgresql://postgres:password@localhost:5432/testdb").await;
+        match result {
+            Ok(pool) => {
+                let query_result = execute_query(&pool, "SELECT 1").await;
+                match query_result {
+                    Ok(rows) => {
+                        assert_eq!(rows, 1);
+                        println!("查询执行成功，影响行数: {}", rows);
+                    }
+                    Err(e) => {
+                        println!("查询执行失败: {}", e);
+                    }
+                }
             }
             Err(e) => {
                 println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
