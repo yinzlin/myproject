@@ -89,6 +89,10 @@ pub fn get_pool_size(pool: &DbPool) -> u32 {
     pool.size()
 }
 
+pub fn get_idle_connections(pool: &DbPool) -> u32 {
+    pool.num_idle() as u32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -214,6 +218,21 @@ mod tests {
                 let size = get_pool_size(&pool);
                 assert_eq!(size, 0);
                 println!("连接池当前连接数: {}", size);
+            }
+            Err(e) => {
+                println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_idle_connections() {
+        let result = create_pool_with_url("postgresql://postgres:password@localhost:5432/testdb").await;
+        match result {
+            Ok(pool) => {
+                let idle = get_idle_connections(&pool);
+                assert_eq!(idle, 0);
+                println!("连接池空闲连接数: {}", idle);
             }
             Err(e) => {
                 println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
