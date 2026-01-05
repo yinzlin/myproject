@@ -58,6 +58,28 @@ pub async fn create_pool_with_url(database_url: &str) -> DbResult<DbPool> {
     create_pool(&config).await
 }
 
+pub async fn create_pool_with_options(
+    database_url: &str,
+    max_connections: u32,
+    min_connections: u32,
+) -> DbResult<DbPool> {
+    let config = DbConfig {
+        database_url: database_url.to_string(),
+        max_connections,
+        min_connections,
+        ..Default::default()
+    };
+    create_pool(&config).await
+}
+
+pub async fn test_connection(pool: &DbPool) -> DbResult<bool> {
+    sqlx::query("SELECT 1")
+        .fetch_one(pool)
+        .await
+        .map(|_| true)
+        .map_err(DbError::ConnectionError)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,6 +139,42 @@ mod tests {
             Ok(pool) => {
                 assert_eq!(pool.size(), 0);
                 println!("连接池创建成功，当前连接数: {}", pool.size());
+            }
+            Err(e) => {
+                println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_pool_with_options() {
+        let result = create_pool_with_options("postgresql://postgres:password@localhost:5432/testdb", 5, 1).await;
+        match result {
+            Ok(pool) => {
+                assert_eq!(pool.size(), 0);
+                println!("连接池创建成功，当前连接数: {}", pool.size());
+            }
+            Err(e) => {
+                println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_test_connection() {
+        let result = create_pool_with_url("postgresql://postgres:password@localhost:5432/testdb").await;
+        match result {
+            Ok(pool) => {
+                let test_result = test_connection(&pool).await;
+                match test_result {
+                    Ok(is_connected) => {
+                        assert!(is_connected);
+                        println!("数据库连接测试成功");
+                    }
+                    Err(e) => {
+                        println!("数据库连接测试失败: {}", e);
+                    }
+                }
             }
             Err(e) => {
                 println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
