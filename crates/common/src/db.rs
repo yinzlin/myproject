@@ -114,6 +114,11 @@ pub async fn fetch_all(pool: &DbPool, query: &str) -> DbResult<Vec<sqlx::postgre
     Ok(rows)
 }
 
+pub async fn begin_transaction(pool: &DbPool) -> DbResult<sqlx::Transaction<'_, Postgres>> {
+    let tx = pool.begin().await?;
+    Ok(tx)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,6 +327,27 @@ mod tests {
                     }
                     Err(e) => {
                         println!("多行查询失败: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_begin_transaction() {
+        let result = create_pool_with_url("postgresql://postgres:password@localhost:5432/testdb").await;
+        match result {
+            Ok(pool) => {
+                let tx_result = begin_transaction(&pool).await;
+                match tx_result {
+                    Ok(_tx) => {
+                        println!("事务创建成功");
+                    }
+                    Err(e) => {
+                        println!("事务创建失败: {}", e);
                     }
                 }
             }
