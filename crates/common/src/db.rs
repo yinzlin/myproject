@@ -124,6 +124,11 @@ pub async fn commit_transaction(tx: sqlx::Transaction<'_, Postgres>) -> DbResult
     Ok(())
 }
 
+pub async fn rollback_transaction(tx: sqlx::Transaction<'_, Postgres>) -> DbResult<()> {
+    tx.rollback().await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -377,6 +382,35 @@ mod tests {
                             }
                             Err(e) => {
                                 println!("事务提交失败: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("事务创建失败: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_rollback_transaction() {
+        let result = create_pool_with_url("postgresql://postgres:password@localhost:5432/testdb").await;
+        match result {
+            Ok(pool) => {
+                let tx_result = begin_transaction(&pool).await;
+                match tx_result {
+                    Ok(tx) => {
+                        let rollback_result = rollback_transaction(tx).await;
+                        match rollback_result {
+                            Ok(_) => {
+                                println!("事务回滚成功");
+                            }
+                            Err(e) => {
+                                println!("事务回滚失败: {}", e);
                             }
                         }
                     }
