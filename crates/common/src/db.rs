@@ -107,6 +107,13 @@ pub async fn fetch_one(pool: &DbPool, query: &str) -> DbResult<sqlx::postgres::P
     Ok(row)
 }
 
+pub async fn fetch_all(pool: &DbPool, query: &str) -> DbResult<Vec<sqlx::postgres::PgRow>> {
+    let rows = sqlx::query(query)
+        .fetch_all(pool)
+        .await?;
+    Ok(rows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,6 +298,30 @@ mod tests {
                     }
                     Err(e) => {
                         println!("单行查询失败: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_all() {
+        let result = create_pool_with_url("postgresql://postgres:password@localhost:5432/testdb").await;
+        match result {
+            Ok(pool) => {
+                let fetch_result = fetch_all(&pool, "SELECT 1 as value UNION SELECT 2 as value").await;
+                match fetch_result {
+                    Ok(rows) => {
+                        assert_eq!(rows.len(), 2);
+                        let value1: i32 = rows[0].get("value");
+                        let value2: i32 = rows[1].get("value");
+                        println!("多行查询成功，行数: {}, values: {}, {}", rows.len(), value1, value2);
+                    }
+                    Err(e) => {
+                        println!("多行查询失败: {}", e);
                     }
                 }
             }
