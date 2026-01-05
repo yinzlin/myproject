@@ -156,6 +156,16 @@ pub async fn fetch_one_in_transaction(
     Ok(row)
 }
 
+pub async fn fetch_all_in_transaction(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    query: &str,
+) -> DbResult<Vec<sqlx::postgres::PgRow>> {
+    let rows = sqlx::query(query)
+        .fetch_all(&mut **tx)
+        .await?;
+    Ok(rows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -525,6 +535,38 @@ mod tests {
                             }
                             Err(e) => {
                                 println!("事务内单行查询失败: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("事务创建失败: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_all_in_transaction() {
+        let result = create_pool_with_url("postgresql://postgres:password@localhost:5432/testdb").await;
+        match result {
+            Ok(pool) => {
+                let tx_result = begin_transaction(&pool).await;
+                match tx_result {
+                    Ok(mut tx) => {
+                        let fetch_result = fetch_all_in_transaction(&mut tx, "SELECT 1 as value UNION SELECT 2 as value").await;
+                        match fetch_result {
+                            Ok(rows) => {
+                                assert_eq!(rows.len(), 2);
+                                let value1: i32 = rows[0].get("value");
+                                let value2: i32 = rows[1].get("value");
+                                println!("事务内多行查询成功，行数: {}, values: {}, {}", rows.len(), value1, value2);
+                            }
+                            Err(e) => {
+                                println!("事务内多行查询失败: {}", e);
                             }
                         }
                     }
