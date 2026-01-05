@@ -146,6 +146,16 @@ pub async fn execute_in_transaction(
     Ok(result.rows_affected())
 }
 
+pub async fn fetch_one_in_transaction(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    query: &str,
+) -> DbResult<sqlx::postgres::PgRow> {
+    let row = sqlx::query(query)
+        .fetch_one(&mut **tx)
+        .await?;
+    Ok(row)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,6 +494,37 @@ mod tests {
                             }
                             Err(e) => {
                                 println!("事务内查询执行失败: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("事务创建失败: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_one_in_transaction() {
+        let result = create_pool_with_url("postgresql://postgres:password@localhost:5432/testdb").await;
+        match result {
+            Ok(pool) => {
+                let tx_result = begin_transaction(&pool).await;
+                match tx_result {
+                    Ok(mut tx) => {
+                        let fetch_result = fetch_one_in_transaction(&mut tx, "SELECT 1 as value").await;
+                        match fetch_result {
+                            Ok(row) => {
+                                let value: i32 = row.get("value");
+                                assert_eq!(value, 1);
+                                println!("事务内单行查询成功，value: {}", value);
+                            }
+                            Err(e) => {
+                                println!("事务内单行查询失败: {}", e);
                             }
                         }
                     }
