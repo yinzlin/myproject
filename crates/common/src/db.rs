@@ -50,6 +50,14 @@ pub async fn create_pool(config: &DbConfig) -> DbResult<DbPool> {
     Ok(pool)
 }
 
+pub async fn create_pool_with_url(database_url: &str) -> DbResult<DbPool> {
+    let config = DbConfig {
+        database_url: database_url.to_string(),
+        ..Default::default()
+    };
+    create_pool(&config).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,6 +99,20 @@ mod tests {
         };
 
         let result = create_pool(&config).await;
+        match result {
+            Ok(pool) => {
+                assert_eq!(pool.size(), 0);
+                println!("连接池创建成功，当前连接数: {}", pool.size());
+            }
+            Err(e) => {
+                println!("连接池创建失败（预期，如果数据库未运行）: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_pool_with_url() {
+        let result = create_pool_with_url("postgresql://postgres:password@localhost:5432/testdb").await;
         match result {
             Ok(pool) => {
                 assert_eq!(pool.size(), 0);
