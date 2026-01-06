@@ -2,10 +2,29 @@ use sqlx::{Pool, Postgres, Sqlite, postgres::PgPoolOptions, sqlite::SqlitePoolOp
 use std::time::Duration;
 use thiserror::Error;
 
+pub const DEFAULT_MAX_CONNECTIONS: u32 = 10;
+pub const DEFAULT_MIN_CONNECTIONS: u32 = 1;
+pub const DEFAULT_ACQUIRE_TIMEOUT_SECS: u64 = 30;
+pub const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 600;
+pub const DEFAULT_MAX_LIFETIME_SECS: u64 = 1800;
+pub const DEFAULT_QUERY_TIMEOUT_SECS: u64 = 30;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DatabaseType {
     Postgres,
     Sqlite,
+}
+
+impl DatabaseType {
+    pub fn from_url(url: &str) -> Option<Self> {
+        if url.starts_with("postgresql://") || url.starts_with("postgres://") {
+            Some(DatabaseType::Postgres)
+        } else if url.starts_with("sqlite:") {
+            Some(DatabaseType::Sqlite)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Error, Debug)]
@@ -103,18 +122,24 @@ impl DbConfigBuilder {
     }
 
     pub fn build(self) -> DbResult<DbConfig> {
+        let database_url = self.database_url.ok_or_else(|| {
+            DbError::ConfigError("database_url is required".to_string())
+        })?;
+        
+        let database_type = self.database_type.or_else(|| {
+            DatabaseType::from_url(&database_url)
+        }).unwrap_or(DatabaseType::Postgres);
+        
         Ok(DbConfig {
-            database_url: self.database_url.ok_or_else(|| {
-                DbError::ConfigError("database_url is required".to_string())
-            })?,
-            database_type: self.database_type.unwrap_or(DatabaseType::Postgres),
-            max_connections: self.max_connections.unwrap_or(10),
-            min_connections: self.min_connections.unwrap_or(1),
-            acquire_timeout: self.acquire_timeout.unwrap_or(Duration::from_secs(30)),
-            idle_timeout: self.idle_timeout.unwrap_or(Duration::from_secs(600)),
-            max_lifetime: self.max_lifetime.unwrap_or(Duration::from_secs(1800)),
+            database_url,
+            database_type,
+            max_connections: self.max_connections.unwrap_or(DEFAULT_MAX_CONNECTIONS),
+            min_connections: self.min_connections.unwrap_or(DEFAULT_MIN_CONNECTIONS),
+            acquire_timeout: self.acquire_timeout.unwrap_or(Duration::from_secs(DEFAULT_ACQUIRE_TIMEOUT_SECS)),
+            idle_timeout: self.idle_timeout.unwrap_or(Duration::from_secs(DEFAULT_IDLE_TIMEOUT_SECS)),
+            max_lifetime: self.max_lifetime.unwrap_or(Duration::from_secs(DEFAULT_MAX_LIFETIME_SECS)),
             test_before_acquire: self.test_before_acquire.unwrap_or(true),
-            query_timeout: self.query_timeout.unwrap_or(Duration::from_secs(30)),
+            query_timeout: self.query_timeout.unwrap_or(Duration::from_secs(DEFAULT_QUERY_TIMEOUT_SECS)),
         })
     }
 }
@@ -124,13 +149,13 @@ impl Default for DbConfig {
         Self {
             database_url: "postgresql://postgres:password@localhost:5432/mydb".to_string(),
             database_type: DatabaseType::Postgres,
-            max_connections: 10,
-            min_connections: 1,
-            acquire_timeout: Duration::from_secs(30),
-            idle_timeout: Duration::from_secs(600),
-            max_lifetime: Duration::from_secs(1800),
+            max_connections: DEFAULT_MAX_CONNECTIONS,
+            min_connections: DEFAULT_MIN_CONNECTIONS,
+            acquire_timeout: Duration::from_secs(DEFAULT_ACQUIRE_TIMEOUT_SECS),
+            idle_timeout: Duration::from_secs(DEFAULT_IDLE_TIMEOUT_SECS),
+            max_lifetime: Duration::from_secs(DEFAULT_MAX_LIFETIME_SECS),
             test_before_acquire: true,
-            query_timeout: Duration::from_secs(30),
+            query_timeout: Duration::from_secs(DEFAULT_QUERY_TIMEOUT_SECS),
         }
     }
 }
@@ -195,6 +220,24 @@ pub async fn create_pool(config: &DbConfig) -> DbResult<DbPool> {
 pub async fn create_pool_with_url(database_url: &str) -> DbResult<DbPool> {
     let config = DbConfig::builder()
         .database_url(database_url)
+        .build()?;
+    create_pool(&config).await
+}
+
+pub async fn create_pool_auto(database_url: &str) -> DbResult<DbPool> {
+    let database_type = DatabaseType::from_url(database_url)
+        .ok_or_else(|| DbError::ConfigError(format!("无法从URL识别数据库类型: {}", database_url)))?;
+    
+    create_pool_with_url_and_type(database_url, database_type).await
+}
+
+pub async fn create_pool_with_url_and_type(
+    database_url: &str,
+    database_type: DatabaseType,
+) -> DbResult<DbPool> {
+    let config = DbConfig::builder()
+        .database_url(database_url)
+        .database_type(database_type)
         .build()?;
     create_pool(&config).await
 }

@@ -6,6 +6,31 @@ db.rs 模块提供了 PostgreSQL 和 SQLite3 数据库连接池管理、事务�
 
 ## 核心组件
 
+### 0. 常量定义
+
+```rust
+pub const DEFAULT_MAX_CONNECTIONS: u32 = 10;
+pub const DEFAULT_MIN_CONNECTIONS: u32 = 1;
+pub const DEFAULT_ACQUIRE_TIMEOUT_SECS: u64 = 30;
+pub const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 600;
+pub const DEFAULT_MAX_LIFETIME_SECS: u64 = 1800;
+pub const DEFAULT_QUERY_TIMEOUT_SECS: u64 = 30;
+```
+
+**说明**：
+- `DEFAULT_MAX_CONNECTIONS`: 默认最大连接数
+- `DEFAULT_MIN_CONNECTIONS`: 默认最小连接数
+- `DEFAULT_ACQUIRE_TIMEOUT_SECS`: 默认获取连接超时（秒）
+- `DEFAULT_IDLE_TIMEOUT_SECS`: 默认空闲连接超时（秒）
+- `DEFAULT_MAX_LIFETIME_SECS`: 默认连接最大生命周期（秒）
+- `DEFAULT_QUERY_TIMEOUT_SECS`: 默认查询超时（秒）
+
+**最佳实践**：
+- 生产环境应根据实际负载调整这些默认值
+- 高并发场景可增加最大连接数
+- 长查询场景应增加查询超时时间
+- 使用这些常量确保配置的一致性
+
 ### 1. 错误类型 (DbError)
 
 ```rust
@@ -42,11 +67,29 @@ pub enum DatabaseType {
 - `Postgres`: PostgreSQL 数据库
 - `Sqlite`: SQLite3 数据库
 
+**方法**：
+- `from_url(url: &str) -> Option<Self>`: 从数据库URL自动识别数据库类型
+  - 支持 `postgresql://` 或 `postgres://` 开头的URL识别为PostgreSQL
+  - 支持 `sqlite:` 开头的URL识别为SQLite3
+  - 无法识别时返回None
+
 **最佳实践**：
 - 根据应用场景选择合适的数据库类型
 - 生产环境推荐使用 PostgreSQL
 - 测试和嵌入式场景推荐使用 SQLite3
 - 配置文件中明确指定数据库类型
+- 使用 `from_url` 方法可以简化配置，自动识别数据库类型
+
+**使用示例**：
+```rust
+use common::db::DatabaseType;
+
+let db_type = DatabaseType::from_url("postgresql://localhost/mydb");
+assert_eq!(db_type, Some(DatabaseType::Postgres));
+
+let db_type = DatabaseType::from_url("sqlite::memory:");
+assert_eq!(db_type, Some(DatabaseType::Sqlite));
+```
 
 ### 3. 数据库配置 (DbConfig)
 
@@ -186,10 +229,63 @@ pub async fn create_pool(config: &DbConfig) -> DbResult<DbPool>
 #### create_pool_with_url
 
 ```rust
-pub async fn create_pool_with_url(database_url: &str, database_type: DatabaseType) -> DbResult<DbPool>
+pub async fn create_pool_with_url(database_url: &str) -> DbResult<DbPool>
 ```
 
-**功能**：使用默认配置创建连接池
+**功能**：使用默认配置创建连接池（自动识别数据库类型）
+
+**参数**：
+- `database_url`: 数据库连接 URL
+
+**返回**：
+- `DbResult<DbPool>`: 连接池对象或错误
+
+**适用场景**：
+- 快速创建连接池进行开发测试
+- 使用默认配置参数满足大部分场景需求
+- 自动从URL识别数据库类型
+
+**使用示例**：
+```rust
+use common::db::create_pool_with_url;
+
+let pool = create_pool_with_url("postgresql://user:pass@localhost:5432/db").await?;
+```
+
+#### create_pool_auto
+
+```rust
+pub async fn create_pool_auto(database_url: &str) -> DbResult<DbPool>
+```
+
+**功能**：自动识别数据库类型并创建连接池
+
+**参数**：
+- `database_url`: 数据库连接 URL
+
+**返回**：
+- `DbResult<DbPool>`: 连接池对象或错误
+
+**适用场景**：
+- 需要自动识别数据库类型的场景
+- 配置文件中只提供数据库URL
+- 简化配置流程
+
+**使用示例**：
+```rust
+use common::db::create_pool_auto;
+
+let pool = create_pool_auto("postgresql://user:pass@localhost:5432/db").await?;
+let pool = create_pool_auto("sqlite::memory:").await?;
+```
+
+#### create_pool_with_url_and_type
+
+```rust
+pub async fn create_pool_with_url_and_type(database_url: &str, database_type: DatabaseType) -> DbResult<DbPool>
+```
+
+**功能**：使用默认配置创建连接池（指定数据库类型）
 
 **参数**：
 - `database_url`: 数据库连接 URL
@@ -199,6 +295,19 @@ pub async fn create_pool_with_url(database_url: &str, database_type: DatabaseTyp
 - `DbResult<DbPool>`: 连接池对象或错误
 
 **适用场景**：
+- 需要明确指定数据库类型
+- 使用默认配置参数满足大部分场景需求
+- 确保使用正确的数据库类型
+
+**使用示例**：
+```rust
+use common::db::{create_pool_with_url_and_type, DatabaseType};
+
+let pool = create_pool_with_url_and_type(
+    "postgresql://user:pass@localhost:5432/db",
+    DatabaseType::Postgres
+).await?;
+```
 - 快速原型开发
 - 测试环境
 - 不需要自定义配置的场景
@@ -888,8 +997,137 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### 3. 跨数据库兼容性
 
 - 使用标准 SQL 语法，避免数据库特定特性
+- 使用 `DatabaseType::from_url` 自动识别数据库类型
+- 使用 `create_pool_auto` 简化连接池创建流程
+- 使用 `create_pool_with_url_and_type` 明确指定数据库类型
+- 测试时使用 SQLite3 内存数据库提高测试速度
+- 生产环境使用 PostgreSQL 获得更好的性能和可靠性
+
+### 4. 配置管理
+
+- 使用常量定义的默认值确保配置一致性
+- 通过 Builder 模式构建配置，避免遗漏必填字段
+- 在配置文件中存储数据库URL，便于环境切换
+- 利用 `from_url` 方法自动识别数据库类型，减少配置复杂度
+- 根据不同环境（开发、测试、生产）使用不同的配置参数
+
+### 5. 性能优化
+
 - 使用 AnyRow 类型实现跨数据库兼容
 - 测试时同时测试 PostgreSQL 和 SQLite3
+- 合理设置连接池大小和超时时间
+- 使用参数化查询避免 SQL 注入
+- 批量操作使用事务提高性能
+- 监控连接池状态，及时调整配置
+
+## 新增功能使用指南
+
+### 自动识别数据库类型
+
+v2.1.0 版本引入了自动识别数据库类型的功能，可以简化配置流程：
+
+#### 方法1：使用 create_pool_auto
+
+```rust
+use common::db::create_pool_auto;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let postgres_pool = create_pool_auto("postgresql://user:pass@localhost:5432/mydb").await?;
+    let sqlite_pool = create_pool_auto("sqlite::memory:").await?;
+    
+    Ok(())
+}
+```
+
+#### 方法2：使用 DatabaseType::from_url
+
+```rust
+use common::db::{DbConfig, DatabaseType};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let database_url = "postgresql://user:pass@localhost:5432/mydb";
+    let db_type = DatabaseType::from_url(database_url)
+        .expect("无法识别数据库类型");
+    
+    let config = DbConfig::builder()
+        .database_url(database_url)
+        .database_type(db_type)
+        .build()?;
+    
+    let pool = create_pool(&config).await?;
+    
+    Ok(())
+}
+```
+
+#### 方法3：使用 create_pool_with_url_and_type
+
+```rust
+use common::db::{create_pool_with_url_and_type, DatabaseType};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let pool = create_pool_with_url_and_type(
+        "postgresql://user:pass@localhost:5432/mydb",
+        DatabaseType::Postgres
+    ).await?;
+    
+    Ok(())
+}
+```
+
+### 配置文件示例
+
+使用常量定义的默认值可以简化配置：
+
+```rust
+use common::db::{DbConfig, DatabaseType, DEFAULT_MAX_CONNECTIONS};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = DbConfig::builder()
+        .database_url("postgresql://user:pass@localhost:5432/mydb")
+        .max_connections(DEFAULT_MAX_CONNECTIONS * 2)
+        .build()?;
+    
+    let pool = create_pool(&config).await?;
+    
+    Ok(())
+}
+```
+
+### 环境切换示例
+
+通过配置文件和环境变量实现灵活的环境切换：
+
+```rust
+use common::db::{create_pool_auto, DbConfig, DatabaseType};
+use std::env;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let database_url = env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "sqlite::memory:".to_string());
+    
+    let pool = create_pool_auto(&database_url).await?;
+    
+    Ok(())
+}
+```
+
+环境变量设置：
+```bash
+# 开发环境
+export DATABASE_URL="sqlite::memory:"
+
+# 测试环境
+export DATABASE_URL="postgresql://test:test@localhost:5432/testdb"
+
+# 生产环境
+export DATABASE_URL="postgresql://prod:secret@prod-db.example.com:5432/proddb"
+```
 - 注意不同数据库的数据类型差异
 
 ### 4. 查询优化
@@ -1001,7 +1239,16 @@ cargo test --package common
 
 ## 版本历史
 
-### v2.0.0 (当前版本)
+### v2.1.0 (当前版本)
+- 添加常量定义（DEFAULT_MAX_CONNECTIONS等）
+- DatabaseType添加from_url方法，支持自动识别数据库类型
+- 添加create_pool_auto函数，自动识别数据库类型并创建连接池
+- 添加create_pool_with_url_and_type函数，支持指定数据库类型创建连接池
+- 优化DbConfigBuilder，支持自动从URL识别数据库类型
+- 使用常量替代硬编码的默认值，提高代码可维护性
+- 改进文档，添加更多使用示例
+
+### v2.0.0
 - 添加 SQLite3 数据库支持
 - 添加 DatabaseType 枚举
 - 添加 DbPool 枚举统一管理连接池
